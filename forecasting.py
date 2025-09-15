@@ -11,8 +11,7 @@ from typing import Optional, Tuple, Dict, List
 from sklearn.metrics import mean_squared_error
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
 from sklearn.svm import SVR
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.linear_model import Lasso, ElasticNet, Ridge, LinearRegression
+from sklearn.linear_model import Ridge, LinearRegression
 
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -175,36 +174,41 @@ def _bakeoff_ml(y: pd.Series, H: int) -> Tuple[str, float, str]:
             continue
     return (best[1], best[0], "N/A")
 
-def _train_champion_and_forecast(y: pd.Series, H: int,
-                                 champion_name: str, order_str: str,
-                                 exog_hist: Optional[pd.DataFrame] = None,
-                                 exog_future: Optional[pd.DataFrame] = None) -> Tuple[pd.Series, Optional[pd.DataFrame]]:
-    """Train champion on full history and forecast H months. Returns (forecast_mean, conf_int_or_None)."""
+def _train_champion_and_forecast(
+    y: pd.Series,
+    H: int,
+    champion_name: str,
+    order_str: str,
+    exog_hist: Optional[pd.DataFrame] = None,
+    exog_future: Optional[pd.DataFrame] = None
+) -> pd.Series:
+    """Train champion on full history and return a length-H forecast (no confidence interval)."""
     if "SARIMA" in champion_name or "ARIMA" in champion_name:
         # parse "(p,d,q)" and maybe "(P,D,Q,s)"
         import re
         parts = re.findall(r"\(.*?\)", order_str)
-        order = eval(parts[0]) if parts else (1,1,1)
-        seas  = eval(parts[1]) if len(parts) > 1 else (0,0,0,0)
+        order = eval(parts[0]) if parts else (1, 1, 1)
+        seas  = eval(parts[1]) if len(parts) > 1 else (0, 0, 0, 0)
         try:
-            mdl = SARIMAX(y, exog=exog_hist if "X" in champion_name else None,
-                          order=order, seasonal_order=seas,
-                          enforce_stationarity=False, enforce_invertibility=False).fit(disp=False)
-            fc = mdl.get_forecast(steps=H, exog=exog_future if "X" in champion_name else None)
-            mean = fc.predicted_mean.clip(lower=0)
-            ci   = fc.conf_int(alpha=0.05)
-            ci.index = mean.index
-            return mean, ci
+            mdl = SARIMAX(
+                y,
+                exog=exog_hist if "X" in champion_name else None,
+                order=order,
+                seasonal_order=seas,
+                enforce_stationarity=False,
+                enforce_invertibility=False
+            ).fit(disp=False)
+            fc = mdl.forecast(steps=H, exog=exog_future if "X" in champion_name else None)
+            return fc.clip(lower=0)
         except Exception:
-            # fallback: flat carry-forward
             idx = pd.date_range(y.index[-1] + pd.offsets.MonthEnd(1), periods=H, freq="M")
-            return pd.Series([y.iloc[-1]]*H, index=idx), None
+            return pd.Series([y.iloc[-1]] * H, index=idx)
     else:
         # ML champion: iterative one-step ahead using lag features
         X_full = _create_features(y).dropna()
         if X_full.empty:
             idx = pd.date_range(y.index[-1] + pd.offsets.MonthEnd(1), periods=H, freq="M")
-            return pd.Series([y.iloc[-1]]*H, index=idx), None
+            return pd.Series([y.iloc[-1]] * H, index=idx)
 
         models = {
             "Random Forest": RandomForestRegressor(n_estimators=400, random_state=42),
@@ -240,14 +244,13 @@ def _train_champion_and_forecast(y: pd.Series, H: int,
             if "lag_1" in cur_feat:
                 cur_feat["lag_1"] = preds[-1]
 
-        return pd.Series(preds, index=future_idx), None
+        return pd.Series(preds, index=future_idx)
 
 def _champion_summary(y: pd.Series, H: int,
                       exog: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFrame, Tuple[str,str,float]]:
     """Do the bake-off and return (summary_df, (model_name, order_str, rmse))."""
     # basic split: last H months as test (if not enough, use 80/20)
     if len(y) < max(24, H + 6):
-        # very short series; avoid overfitting
         cut = int(len(y) * 0.8)
     else:
         cut = len(y) - H
@@ -291,15 +294,10 @@ def _champion_summary(y: pd.Series, H: int,
     best = summary.iloc[0]
     return summary, (str(best["Model"]), str(best["Order"]), float(best["RMSE"]) if np.isfinite(best["RMSE"]) else np.inf)
 
-def _plot_history_forecast(y: pd.Series, fc: pd.Series, ci: Optional[pd.DataFrame],
-                           title: str, ylab: str) -> go.Figure:
+def _plot_history_forecast(y: pd.Series, fc: pd.Series, title: str, ylab: str) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=y.index,  y=y, name="History", mode="lines"))
     fig.add_trace(go.Scatter(x=fc.index, y=fc, name="Forecast", mode="lines", line=dict(dash="dot")))
-    if ci is not None:
-        fig.add_trace(go.Scatter(x=ci.index, y=ci.iloc[:,0], mode="lines", line=dict(width=0), showlegend=False))
-        fig.add_trace(go.Scatter(x=ci.index, y=ci.iloc[:,1], mode="lines", fill="tonexty", line=dict(width=0),
-                                 name="95% interval"))
     fig.update_layout(title=title, xaxis_title="Date", yaxis_title=ylab)
     return fig
 
@@ -329,12 +327,16 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
         exog_r_future = _exog_future_repeat_last_year(exog_r, H)
         sum_df, (best_name, best_order, best_rmse) = _champion_summary(y_rentals, H, exog_r)
 
-        fc_mean, fc_ci = _train_champion_and_forecast(y_rentals, H, best_name, best_order,
-                                                      exog_hist=exog_r if "X" in best_name else None,
-                                                      exog_future=exog_r_future if "X" in best_name else None)
-        fig1 = _plot_history_forecast(y_rentals, fc_mean, fc_ci,
-                                      f"Forecast for Total Rentals — {best_name} (RMSE: {best_rmse:,.2f})",
-                                      "Number of Rentals")
+        fc_mean = _train_champion_and_forecast(
+            y_rentals, H, best_name, best_order,
+            exog_hist=exog_r if "X" in best_name else None,
+            exog_future=exog_r_future if "X" in best_name else None
+        )
+        fig1 = _plot_history_forecast(
+            y_rentals, fc_mean,
+            f"Forecast for Total Rentals — {best_name} (RMSE: {best_rmse:,.2f})",
+            "Number of Rentals"
+        )
         st.plotly_chart(fig1, use_container_width=True)
 
     st.markdown("---")
@@ -363,9 +365,11 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
                 exog_c_future = _exog_future_repeat_last_year(exog_c, H)
                 _, (best_name, best_order, _) = _champion_summary(y_cat, H, exog_c)
 
-                fc_mean, _ = _train_champion_and_forecast(y_cat, H, best_name, best_order,
-                                                          exog_hist=exog_c if "X" in best_name else None,
-                                                          exog_future=exog_c_future if "X" in best_name else None)
+                fc_mean = _train_champion_and_forecast(
+                    y_cat, H, best_name, best_order,
+                    exog_hist=exog_c if "X" in best_name else None,
+                    exog_future=exog_c_future if "X" in best_name else None
+                )
 
                 # History
                 fig2.add_trace(go.Scatter(
@@ -393,11 +397,11 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
     st.markdown("---")
 
     # ------------------ Plot 3: Total Revenue (Champion) ------------------
-    # Revenue is stored in cents; scale to currency
     if "Net Time&Dist Amount" not in df_filtered.columns:
         st.info("Column 'Net Time&Dist Amount' not found; revenue forecast skipped.")
         return
 
+    # Revenue is stored in cents; scale to currency
     y_rev = _to_monthly_sum(df_filtered, "Net Time&Dist Amount") / 100.0
     if len(y_rev.dropna()) < 8:
         st.info("Not enough monthly points to forecast revenue.")
@@ -405,14 +409,17 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
 
     exog_rev = _build_exog(df_filtered)
     exog_rev_future = _exog_future_repeat_last_year(exog_rev, H)
-
     sum_df, (best_name_r, best_order_r, best_rmse_r) = _champion_summary(y_rev, H, exog_rev)
 
-    fc_mean_r, fc_ci_r = _train_champion_and_forecast(y_rev, H, best_name_r, best_order_r,
-                                                      exog_hist=exog_rev if "X" in best_name_r else None,
-                                                      exog_future=exog_rev_future if "X" in best_name_r else None)
+    fc_mean_r = _train_champion_and_forecast(
+        y_rev, H, best_name_r, best_order_r,
+        exog_hist=exog_rev if "X" in best_name_r else None,
+        exog_future=exog_rev_future if "X" in best_name_r else None
+    )
 
-    fig3 = _plot_history_forecast(y_rev, fc_mean_r, fc_ci_r,
-                                  f"Forecast for Total Revenue — {best_name_r} (RMSE: {best_rmse_r:,.2f})",
-                                  "Total Revenue")
+    fig3 = _plot_history_forecast(
+        y_rev, fc_mean_r,
+        f"Forecast for Total Revenue — {best_name_r} (RMSE: {best_rmse_r:,.2f})",
+        "Total Revenue"
+    )
     st.plotly_chart(fig3, use_container_width=True)
