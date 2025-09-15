@@ -15,22 +15,14 @@ st.set_page_config(
 DATA_PATH = "merged_df_further_cleaned.xlsx"
 
 # ------------------------------------------------------------
-# Helpers
+# Small helpers
 # ------------------------------------------------------------
 def safe_top_value(s: pd.Series, default="—"):
-    if s is None or s.empty:
+    if s is None: 
         return default
     s = s.dropna()
-    if s.empty:
-        return default
-    vc = s.value_counts(dropna=True)
-    if vc.empty:
-        return default
-    return vc.idxmax()
+    return default if s.empty else s.value_counts().idxmax()
 
-# ------------------------------------------------------------
-# Load data
-# ------------------------------------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_excel(DATA_PATH)
@@ -49,16 +41,19 @@ def load_data():
     loc_col = next((c for c in LOC_CANDS if c in df.columns), None)
     df["__location__"] = df[loc_col].fillna("Unknown") if loc_col else "Unknown"
 
-    # Channel
+    # Channel (Broker vs Direct via money signals)
     COMM = df.get("Commission Amount", pd.Series(np.nan, index=df.index))
     TRAV = df.get("Travel Agent Prepay Tour Voucher Amount", pd.Series(np.nan, index=df.index))
     USED = df.get("Used Tour Voucher Amount", pd.Series(np.nan, index=df.index))
     broker_mask = (COMM.fillna(0) > 0) | (TRAV.fillna(0) > 0) | (USED.fillna(0) > 0)
     df["cust_channel"] = np.where(broker_mask, "Broker", "Direct")
 
-    # Region
+    # Region (Gulf vs Local vs Other)
     GCC = {"AE","SA","QA","KW","OM","BH"}
-    country_col = next((c for c in ["Address Country Code", "Responsible Country Code", "Responsible Billing Country"] if c in df.columns), None)
+    country_col = next(
+        (c for c in ["Address Country Code", "Responsible Country Code", "Responsible Billing Country"] if c in df.columns),
+        None
+    )
     def region_from_country(x):
         if pd.isna(x): return "Unknown"
         s = str(x).strip().upper()
@@ -72,87 +67,231 @@ def load_data():
 df = load_data()
 
 # ------------------------------------------------------------
-# Sidebar filters
+# Defaults & session state for filters (for Reset)
 # ------------------------------------------------------------
-st.sidebar.header("Filters")
-min_date, max_date = df["__date_idx__"].min(), df["__date_idx__"].max()
-date_range = st.sidebar.date_input("Date range", [min_date, max_date])
+MIN_DT = pd.to_datetime(df["__date_idx__"]).min()
+MAX_DT = pd.to_datetime(df["__date_idx__"]).max()
 
-loc_filter = st.sidebar.multiselect("Location", options=df["__location__"].unique())
-channel_filter = st.sidebar.multiselect("Channel", options=df["cust_channel"].unique())
-region_filter = st.sidebar.multiselect("Region", options=df["cust_region"].unique())
-vehicle_filter = st.sidebar.multiselect("Vehicle Group", options=df.get("Vehicle Group Rented", pd.Series()).dropna().unique())
+def _init_state():
+    if "flt_date" not in st.session_state:
+        st.session_state.flt_date = (MIN_DT.date(), MAX_DT.date())
+    if "flt_loc" not in st.session_state:
+        st.session_state.flt_loc = []
+    if "flt_channel" not in st.session_state:
+        st.session_state.flt_channel = []
+    if "flt_region" not in st.session_state:
+        st.session_state.flt_region = []
+    if "flt_vehicle" not in st.session_state:
+        st.session_state.flt_vehicle = []
 
+def reset_filters():
+    st.session_state.flt_date = (MIN_DT.date(), MAX_DT.date())
+    st.session_state.flt_loc = []
+    st.session_state.flt_channel = []
+    st.session_state.flt_region = []
+    st.session_state.flt_vehicle = []
+
+_init_state()
+
+# ------------------------------------------------------------
+# Header & Filters (on the MAIN page)
+# ------------------------------------------------------------
+st.title("🚗 Rental Analytics Dashboard")
+
+with st.container():
+    top_left, top_mid, top_right = st.columns([6, 3, 1])
+    with top_left:
+        st.subheader("Filters")
+
+        c1, c2, c3 = st.columns([2,2,2])
+        with c1:
+            st.date_input(
+                "Date range",
+                value=st.session_state.flt_date,
+                min_value=MIN_DT.date(),
+                max_value=MAX_DT.date(),
+                key="flt_date",
+            )
+        with c2:
+            st.multiselect(
+                "Location",
+                options=sorted(df["__location__"].dropna().unique()),
+                default=st.session_state.flt_loc,
+                key="flt_loc",
+            )
+            st.multiselect(
+                "Channel",
+                options=sorted(df["cust_channel"].dropna().unique()),
+                default=st.session_state.flt_channel,
+                key="flt_channel",
+            )
+        with c3:
+            st.multiselect(
+                "Region",
+                options=sorted(df["cust_region"].dropna().unique()),
+                default=st.session_state.flt_region,
+                key="flt_region",
+            )
+            st.multiselect(
+                "Vehicle Group",
+                options=sorted(df.get("Vehicle Group Rented", pd.Series(dtype=object)).dropna().unique()),
+                default=st.session_state.flt_vehicle,
+                key="flt_vehicle",
+            )
+
+    with top_right:
+        st.write("")  # spacing
+        st.write("")
+        if st.button("🔄 Reset filters", use_container_width=True):
+            reset_filters()
+            st.experimental_rerun()
+
+# ------------------------------------------------------------
 # Apply filters
-mask = (df["__date_idx__"].between(pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])))
-if loc_filter:
-    mask &= df["__location__"].isin(loc_filter)
-if channel_filter:
-    mask &= df["cust_channel"].isin(channel_filter)
-if region_filter:
-    mask &= df["cust_region"].isin(region_filter)
-if vehicle_filter and "Vehicle Group Rented" in df.columns:
-    mask &= df["Vehicle Group Rented"].isin(vehicle_filter)
+# ------------------------------------------------------------
+date_start, date_end = st.session_state.flt_date
+mask = df["__date_idx__"].between(pd.to_datetime(date_start), pd.to_datetime(date_end))
 
-df_filtered = df[mask]
+if st.session_state.flt_loc:
+    mask &= df["__location__"].isin(st.session_state.flt_loc)
+if st.session_state.flt_channel:
+    mask &= df["cust_channel"].isin(st.session_state.flt_channel)
+if st.session_state.flt_region:
+    mask &= df["cust_region"].isin(st.session_state.flt_region)
+if st.session_state.flt_vehicle and "Vehicle Group Rented" in df.columns:
+    mask &= df["Vehicle Group Rented"].isin(st.session_state.flt_vehicle)
+
+df_filtered = df.loc[mask].copy()
 
 # ------------------------------------------------------------
 # KPIs
 # ------------------------------------------------------------
-st.title("🚗 Rental Analytics Dashboard")
+k1, k2, k3 = st.columns(3)
+k1.metric("Total Rentals", f"{len(df_filtered):,}")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Rentals", f"{len(df_filtered):,}")
-col2.metric("Total Revenue", f"{df_filtered.get('Net Time&Dist Amount', pd.Series()).sum()/100:,.0f}")
-if "Days Charged Count" in df_filtered.columns and "Net Time&Dist Amount" in df_filtered.columns:
-    adr = (df_filtered["Net Time&Dist Amount"] / df_filtered["Days Charged Count"].replace(0,np.nan)).mean()/100
-    col3.metric("Avg Daily Rate", f"{adr:,.0f}")
+total_rev = df_filtered.get("Net Time&Dist Amount", pd.Series(dtype=float)).sum() / 100
+k2.metric("Total Revenue", f"{total_rev:,.0f}")
 
-col4, col5, col6 = st.columns(3)
-col4.metric("Weekend Share", f"{(df_filtered['Checkout Date'].dt.weekday>=5).mean()*100:,.1f}%")
-col5.metric("Top Vehicle", safe_top_value(df_filtered.get("Vehicle Group Rented")))
-col6.metric("Top Location", safe_top_value(df_filtered.get("__location__")))
+if {"Days Charged Count", "Net Time&Dist Amount"}.issubset(df_filtered.columns):
+    adr = (
+        df_filtered["Net Time&Dist Amount"] /
+        df_filtered["Days Charged Count"].replace(0, np.nan)
+    ).mean() / 100
+    k3.metric("Avg Daily Rate", f"{adr:,.0f}")
+else:
+    k3.metric("Avg Daily Rate", "—")
+
+k4, k5, k6 = st.columns(3)
+wkend_share = (df_filtered["Checkout Date"].dt.weekday >= 5).mean() * 100
+k4.metric("Weekend Share", f"{wkend_share:,.1f}%")
+k5.metric("Top Vehicle", safe_top_value(df_filtered.get("Vehicle Group Rented")))
+k6.metric("Top Location", safe_top_value(df_filtered.get("__location__")))
+
+st.markdown("---")
 
 # ------------------------------------------------------------
-# EDA Charts
+# EDA
 # ------------------------------------------------------------
 st.header("📊 Exploratory Data Analysis")
 
 # Rentals per Month
-monthly = df_filtered.dropna(subset=["__date_idx__"]).set_index("__date_idx__").resample("M")["row_id_for_counts"].count()
-fig1 = px.line(monthly, y="row_id_for_counts", title="Rentals per Month")
-st.plotly_chart(fig1, use_container_width=True)
+monthly = (
+    df_filtered.dropna(subset=["__date_idx__"])
+    .set_index("__date_idx__")
+    .resample("M")["row_id_for_counts"]
+    .count()
+    .rename("rentals")
+    .reset_index()
+)
+st.plotly_chart(
+    px.line(monthly, x="__date_idx__", y="rentals", title="Rentals per Month"),
+    use_container_width=True
+)
 
 # Rentals per Year
-yearly = df_filtered.groupby(df_filtered["__date_idx__"].dt.year)["row_id_for_counts"].count()
-fig2 = px.bar(yearly, y="row_id_for_counts", title="Rentals per Year")
-st.plotly_chart(fig2, use_container_width=True)
+yearly = (
+    df_filtered.groupby(df_filtered["__date_idx__"].dt.year)["row_id_for_counts"]
+    .count()
+    .rename("rentals")
+    .reset_index(names=["year"])
+)
+st.plotly_chart(
+    px.bar(yearly, x="year", y="rentals", title="Rentals per Year"),
+    use_container_width=True
+)
 
-# Seasonality
-seasonality = df_filtered.groupby(df_filtered["__date_idx__"].dt.month)["row_id_for_counts"].count()
-fig3 = px.bar(seasonality, y="row_id_for_counts", title="Seasonality by Month")
-st.plotly_chart(fig3, use_container_width=True)
+# Seasonality (month of year)
+seasonality = (
+    df_filtered.groupby(df_filtered["__date_idx__"].dt.month)["row_id_for_counts"]
+    .count()
+    .rename("rentals")
+    .reset_index(names=["month"])
+)
+st.plotly_chart(
+    px.bar(seasonality, x="month", y="rentals", title="Seasonality by Month"),
+    use_container_width=True
+)
 
-# Vehicle Groups
+# Vehicle mix
 if "Vehicle Group Rented" in df_filtered.columns:
-    vc = df_filtered["Vehicle Group Rented"].value_counts().head(10)
-    fig4 = px.bar(vc, y=vc.values, x=vc.index, title="Top Vehicle Groups")
-    st.plotly_chart(fig4, use_container_width=True)
+    vc = (
+        df_filtered["Vehicle Group Rented"]
+        .value_counts()
+        .head(10)
+        .rename_axis("vehicle_group")
+        .reset_index(name="count")
+    )
+    st.plotly_chart(
+        px.bar(vc, x="vehicle_group", y="count", title="Top Vehicle Groups"),
+        use_container_width=True
+    )
 
-# Channel vs Direct
-fig5 = px.bar(df_filtered["cust_channel"].value_counts(), title="Channel Breakdown")
-st.plotly_chart(fig5, use_container_width=True)
+# Channel breakdown
+ch = (
+    df_filtered["cust_channel"].value_counts()
+    .rename_axis("channel").reset_index(name="count")
+)
+st.plotly_chart(
+    px.bar(ch, x="channel", y="count", title="Channel Breakdown"),
+    use_container_width=True
+)
 
-# Region
-fig6 = px.bar(df_filtered["cust_region"].value_counts(), title="Region Breakdown")
-st.plotly_chart(fig6, use_container_width=True)
+# Region breakdown
+rg = (
+    df_filtered["cust_region"].value_counts()
+    .rename_axis("region").reset_index(name="count")
+)
+st.plotly_chart(
+    px.bar(rg, x="region", y="count", title="Region Breakdown"),
+    use_container_width=True
+)
 
-# Weekday / Weekend
-fig7 = px.bar(df_filtered["Checkout Date"].dt.day_name().value_counts(), title="Rentals by Weekday")
-st.plotly_chart(fig7, use_container_width=True)
+# Weekday counts
+wd = (
+    df_filtered["Checkout Date"].dt.day_name().value_counts()
+    .rename_axis("weekday").reset_index(name="count")
+)
+category_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+wd["weekday"] = pd.Categorical(wd["weekday"], categories=category_order, ordered=True)
+wd = wd.sort_values("weekday")
+st.plotly_chart(
+    px.bar(wd, x="weekday", y="count", title="Rentals by Weekday"),
+    use_container_width=True
+)
 
-# Rental Lengths
+# Rental length distributions
 if "Rental Length Days" in df_filtered.columns:
-    fig8 = px.histogram(df_filtered, x="Rental Length Days", title="Distribution of Rental Length (Days)")
-    st.plotly_chart(fig8, use_container_width=True)
-
+    st.plotly_chart(
+        px.histogram(df_filtered, x="Rental Length Days", title="Distribution of Rental Length (Days)"),
+        use_container_width=True
+    )
+if "Rental Length Hours" in df_filtered.columns:
+    st.plotly_chart(
+        px.histogram(df_filtered, x="Rental Length Hours", title="Distribution of Rental Length (Hours)"),
+        use_container_width=True
+    )
+if "Days Charged Count" in df_filtered.columns:
+    st.plotly_chart(
+        px.histogram(df_filtered, x="Days Charged Count", title="Distribution of Days Charged"),
+        use_container_width=True
+    )
