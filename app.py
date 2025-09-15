@@ -4,6 +4,8 @@ import numpy as np
 import streamlit as st
 import plotly.express as px
 from datetime import datetime
+from forecasting import render_forecasting_tab
+
 
 # ------------------------------------------------------------
 # Config
@@ -281,8 +283,9 @@ st.markdown("---")
 # ------------------------------------------------------------
 # Tabs
 # ------------------------------------------------------------
-tab_dem, tab_cust, tab_fleet, tab_time, tab_price, tab_ops = st.tabs(
-    ["📈 Demand & Seasonality", "👥 Customer Mix", "🚗 Fleet Mix", "⏱️ Time Patterns", "💵 Price & Discount", "🛠️ Operations"]
+tab_dem, tab_cust, tab_fleet, tab_time, tab_price, tab_ops, tab_fc = st.tabs(
+    ["📈 Demand & Seasonality", "👥 Customer Mix", "🚗 Fleet Mix",
+     "⏱️ Time Patterns", "💵 Price & Discount", "🛠️ Operations", "🔮 Forecasting"]
 )
 
 # ---------------------- Demand & Seasonality ----------------------
@@ -431,6 +434,9 @@ with tab_price:
         else:
             st.info("No discount rate data.")
 
+with tab_fc:
+    # pass the filtered dataframe so forecasts reflect the active filters
+    render_forecasting_tab(df_filtered)
 # ---------------------- Operations ----------------------
 with tab_ops:
     c1, c2, c3 = st.columns(3)
