@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -162,135 +161,156 @@ if df_filtered.empty:
     st.stop()
 
 # ------------------------------------------------------------
-# KPIs
+# Tabs (grouped by business view)
 # ------------------------------------------------------------
-k1, k2, k3 = st.columns(3)
-k1.metric("Total Rentals", f"{len(df_filtered):,}")
-
-total_rev = df_filtered.get("Net Time&Dist Amount", pd.Series(dtype=float)).sum() / 100
-k2.metric("Total Revenue", f"{total_rev:,.0f}")
-
-if {"Days Charged Count", "Net Time&Dist Amount"}.issubset(df_filtered.columns):
-    adr = (
-        df_filtered["Net Time&Dist Amount"] /
-        df_filtered["Days Charged Count"].replace(0, np.nan)
-    ).mean() / 100
-    k3.metric("Avg Daily Rate", f"{adr:,.0f}")
-else:
-    k3.metric("Avg Daily Rate", "—")
-
-k4, k5, k6 = st.columns(3)
-wkend_share = (df_filtered["Checkout Date"].dt.weekday >= 5).mean() * 100
-k4.metric("Weekend Share", f"{wkend_share:,.1f}%")
-k5.metric("Top Vehicle", safe_top_value(df_filtered.get("Vehicle Group Rented")))
-k6.metric("Top Location", safe_top_value(df_filtered.get("__location__")))
-
-st.markdown("---")
-
-# ------------------------------------------------------------
-# EDA
-# ------------------------------------------------------------
-st.header("📊 Exploratory Data Analysis")
-
-# Rentals per Month
-# Rentals per Month
-monthly = (
-    df_filtered.dropna(subset=["__date_idx__"])
-    .set_index("__date_idx__")
-    .resample("M")["row_id_for_counts"]
-    .count()
-    .rename("rentals")
-    .reset_index()
+tab_overview, tab_demand, tab_vehicle, tab_segments, tab_ops = st.tabs(
+    ["Overview", "Demand & Seasonality", "Vehicle Mix", "Customer Segments", "Rental Duration & Ops"]
 )
 
-fig = px.line(monthly, x="__date_idx__", y="rentals", title="Rentals per Month")
-fig.update_layout(xaxis_title="Date", yaxis_title="Rentals")
-st.plotly_chart(fig, use_container_width=True)
+# ----------------------- Overview ---------------------------
+with tab_overview:
+    st.subheader("Executive KPIs")
 
-# Rentals per Year (fixed)
-yearly = (
-    df_filtered.assign(year=df_filtered["__date_idx__"].dt.year)
-    .groupby("year", dropna=False)["row_id_for_counts"]
-    .count()
-    .reset_index(name="rentals")
-)
-st.plotly_chart(
-    px.bar(yearly, x="year", y="rentals", title="Rentals per Year"),
-    use_container_width=True
-)
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Total Rentals", f"{len(df_filtered):,}")
 
-# Seasonality (month of year) (fixed)
-seasonality = (
-    df_filtered.assign(month=df_filtered["__date_idx__"].dt.month)
-    .groupby("month", dropna=False)["row_id_for_counts"]
-    .count()
-    .reset_index(name="rentals")
-)
-st.plotly_chart(
-    px.bar(seasonality, x="month", y="rentals", title="Seasonality by Month"),
-    use_container_width=True
-)
+    total_rev = df_filtered.get("Net Time&Dist Amount", pd.Series(dtype=float)).sum() / 100
+    k2.metric("Total Revenue", f"{total_rev:,.0f}")
 
-# Vehicle mix
-if "Vehicle Group Rented" in df_filtered.columns:
-    vc = (
-        df_filtered["Vehicle Group Rented"]
-        .value_counts()
-        .head(10)
-        .rename_axis("vehicle_group")
-        .reset_index(name="count")
+    if {"Days Charged Count", "Net Time&Dist Amount"}.issubset(df_filtered.columns):
+        adr = (
+            df_filtered["Net Time&Dist Amount"] /
+            df_filtered["Days Charged Count"].replace(0, np.nan)
+        ).mean() / 100
+        k3.metric("Avg Daily Rate", f"{adr:,.0f}")
+    else:
+        k3.metric("Avg Daily Rate", "—")
+
+    k4, k5, k6 = st.columns(3)
+    wkend_share = (df_filtered["Checkout Date"].dt.weekday >= 5).mean() * 100
+    k4.metric("Weekend Share", f"{wkend_share:,.1f}%")
+    k5.metric("Top Vehicle", safe_top_value(df_filtered.get("Vehicle Group Rented")))
+    k6.metric("Top Location", safe_top_value(df_filtered.get("__location__")))
+
+    st.markdown("---")
+
+    # Rentals per Month
+    monthly = (
+        df_filtered.dropna(subset=["__date_idx__"])
+        .set_index("__date_idx__")
+        .resample("M")["row_id_for_counts"]
+        .count()
+        .rename("rentals")
+        .reset_index()
+    )
+    fig = px.line(monthly, x="__date_idx__", y="rentals", title="Rentals per Month")
+    fig.update_layout(xaxis_title="Date", yaxis_title="Rentals")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Rentals per Year
+    yearly = (
+        df_filtered.assign(year=df_filtered["__date_idx__"].dt.year)
+        .groupby("year", dropna=False)["row_id_for_counts"]
+        .count()
+        .reset_index(name="rentals")
     )
     st.plotly_chart(
-        px.bar(vc, x="vehicle_group", y="count", title="Top Vehicle Groups"),
+        px.bar(yearly, x="year", y="rentals", title="Rentals per Year"),
         use_container_width=True
     )
 
-# Channel breakdown
-ch = (
-    df_filtered["cust_channel"].value_counts()
-    .rename_axis("channel").reset_index(name="count")
-)
-st.plotly_chart(
-    px.bar(ch, x="channel", y="count", title="Channel Breakdown"),
-    use_container_width=True
-)
+# ---------------- Demand & Seasonality ----------------------
+with tab_demand:
+    st.subheader("Demand & Seasonality")
 
-# Region breakdown
-rg = (
-    df_filtered["cust_region"].value_counts()
-    .rename_axis("region").reset_index(name="count")
-)
-st.plotly_chart(
-    px.bar(rg, x="region", y="count", title="Region Breakdown"),
-    use_container_width=True
-)
-
-# Weekday counts
-wd = (
-    df_filtered["Checkout Date"].dt.day_name().value_counts()
-    .rename_axis("weekday").reset_index(name="count")
-)
-category_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-wd["weekday"] = pd.Categorical(wd["weekday"], categories=category_order, ordered=True)
-wd = wd.sort_values("weekday")
-st.plotly_chart(
-    px.bar(wd, x="weekday", y="count", title="Rentals by Weekday"),
-    use_container_width=True
-)
-
-# Rental length distributions
-if "Rental Length Days" in df_filtered.columns:
+    # Seasonality (month of year)
+    seasonality = (
+        df_filtered.assign(month=df_filtered["__date_idx__"].dt.month)
+        .groupby("month", dropna=False)["row_id_for_counts"]
+        .count()
+        .reset_index(name="rentals")
+    )
     st.plotly_chart(
-        px.histogram(df_filtered, x="Rental Length Days", title="Distribution of Rental Length (Days)"),
+        px.bar(seasonality, x="month", y="rentals", title="Seasonality by Month"),
         use_container_width=True
     )
-if "Rental Length Hours" in df_filtered.columns:
+
+    # Weekday counts
+    wd = (
+        df_filtered["Checkout Date"].dt.day_name().value_counts()
+        .rename_axis("weekday").reset_index(name="count")
+    )
+    category_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    wd["weekday"] = pd.Categorical(wd["weekday"], categories=category_order, ordered=True)
+    wd = wd.sort_values("weekday")
     st.plotly_chart(
-        px.histogram(df_filtered, x="Rental Length Hours", title="Distribution of Rental Length (Hours)"),
+        px.bar(wd, x="weekday", y="count", title="Rentals by Weekday"),
         use_container_width=True
     )
-if "Days Charged Count" in df_filtered.columns:
+
+# --------------------- Vehicle Mix --------------------------
+with tab_vehicle:
+    st.subheader("Vehicle Mix")
+    if "Vehicle Group Rented" in df_filtered.columns:
+        vc = (
+            df_filtered["Vehicle Group Rented"]
+            .value_counts()
+            .head(10)
+            .rename_axis("vehicle_group")
+            .reset_index(name="count")
+        )
+        st.plotly_chart(
+            px.bar(vc, x="vehicle_group", y="count", title="Top Vehicle Groups"),
+            use_container_width=True
+        )
+    else:
+        st.info("No 'Vehicle Group Rented' column found.")
+
+# ------------------- Customer Segments ----------------------
+with tab_segments:
+    st.subheader("Customer Segments")
+
+    # Channel breakdown
+    ch = (
+        df_filtered["cust_channel"].value_counts()
+        .rename_axis("channel").reset_index(name="count")
+    )
     st.plotly_chart(
-        px.histogram(df_filtered, x="Days Charged Count", title="Distribution of Days Charged"),
+        px.bar(ch, x="channel", y="count", title="Channel Breakdown"),
         use_container_width=True
     )
+
+    # Region breakdown
+    rg = (
+        df_filtered["cust_region"].value_counts()
+        .rename_axis("region").reset_index(name="count")
+    )
+    st.plotly_chart(
+        px.bar(rg, x="region", y="count", title="Region Breakdown"),
+        use_container_width=True
+    )
+
+# --------------- Rental Duration & Ops ----------------------
+with tab_ops:
+    st.subheader("Rental Duration & Operations")
+
+    # Rental length distributions
+    c1, c2, c3 = st.columns(3)
+    if "Rental Length Days" in df_filtered.columns:
+        with c1:
+            st.plotly_chart(
+                px.histogram(df_filtered, x="Rental Length Days", title="Distribution of Rental Length (Days)"),
+                use_container_width=True
+            )
+    if "Rental Length Hours" in df_filtered.columns:
+        with c2:
+            st.plotly_chart(
+                px.histogram(df_filtered, x="Rental Length Hours", title="Distribution of Rental Length (Hours)"),
+                use_container_width=True
+            )
+    if "Days Charged Count" in df_filtered.columns:
+        with c3:
+            st.plotly_chart(
+                px.histogram(df_filtered, x="Days Charged Count", title="Distribution of Days Charged"),
+                use_container_width=True
+            )
