@@ -200,10 +200,11 @@ monthly = (
     .rename("rentals")
     .reset_index()
 )
-st.plotly_chart(
-    px.line(monthly, x="__date_idx__", y="rentals", title="Rentals per Month"),
-    use_container_width=True
-)
+
+fig = px.line(monthly, x="__date_idx__", y="rentals", title="Rentals per Month")
+fig.update_layout(xaxis_title="Date", yaxis_title="Rentals")
+st.plotly_chart(fig, use_container_width=True)
+
 
 # Rentals per Year (fixed)
 yearly = (
