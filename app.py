@@ -15,10 +15,10 @@ st.set_page_config(
 DATA_PATH = "merged_df_further_cleaned.xlsx"
 
 # ------------------------------------------------------------
-# Small helpers
+# Helpers
 # ------------------------------------------------------------
 def safe_top_value(s: pd.Series, default="—"):
-    if s is None: 
+    if s is None:
         return default
     s = s.dropna()
     return default if s.empty else s.value_counts().idxmax()
@@ -67,14 +67,14 @@ def load_data():
 df = load_data()
 
 # ------------------------------------------------------------
-# Defaults & session state for filters (for Reset)
+# Defaults & session state for filters (use LIST, not tuple)
 # ------------------------------------------------------------
 MIN_DT = pd.to_datetime(df["__date_idx__"]).min()
 MAX_DT = pd.to_datetime(df["__date_idx__"]).max()
 
 def _init_state():
     if "flt_date" not in st.session_state:
-        st.session_state.flt_date = (MIN_DT.date(), MAX_DT.date())
+        st.session_state.flt_date = [MIN_DT.date(), MAX_DT.date()]  # LIST
     if "flt_loc" not in st.session_state:
         st.session_state.flt_loc = []
     if "flt_channel" not in st.session_state:
@@ -84,8 +84,8 @@ def _init_state():
     if "flt_vehicle" not in st.session_state:
         st.session_state.flt_vehicle = []
 
-def reset_filters():
-    st.session_state.flt_date = (MIN_DT.date(), MAX_DT.date())
+def _reset_filters():
+    st.session_state.flt_date = [MIN_DT.date(), MAX_DT.date()]  # keep type = LIST
     st.session_state.flt_loc = []
     st.session_state.flt_channel = []
     st.session_state.flt_region = []
@@ -94,7 +94,7 @@ def reset_filters():
 _init_state()
 
 # ------------------------------------------------------------
-# Header & Filters (on the MAIN page)
+# Header & Filters (main page)
 # ------------------------------------------------------------
 st.title("🚗 Rental Analytics Dashboard")
 
@@ -105,6 +105,7 @@ with st.container():
 
         c1, c2, c3 = st.columns([2,2,2])
         with c1:
+            # Pass list (or tuple). We'll pass list from session state.
             st.date_input(
                 "Date range",
                 value=st.session_state.flt_date,
@@ -140,11 +141,10 @@ with st.container():
             )
 
     with top_right:
-        st.write("")  # spacing
         st.write("")
-        if st.button("🔄 Reset filters", use_container_width=True):
-            reset_filters()
-            st.experimental_rerun()
+        st.write("")
+        # Use callback so Streamlit handles the rerun cleanly
+        st.button("🔄 Reset filters", use_container_width=True, on_click=_reset_filters)
 
 # ------------------------------------------------------------
 # Apply filters
