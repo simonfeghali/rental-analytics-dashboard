@@ -325,7 +325,7 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
     else:
         exog_r = _build_exog(df_filtered)
         exog_r_future = _exog_future_repeat_last_year(exog_r, H)
-        sum_df, (best_name, best_order, best_rmse) = _champion_summary(y_rentals, H, exog_r)
+        _, (best_name, best_order, best_rmse) = _champion_summary(y_rentals, H, exog_r)
 
         fc_mean = _train_champion_and_forecast(
             y_rentals, H, best_name, best_order,
@@ -341,20 +341,18 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
 
     st.markdown("---")
 
-    # ------------------ Plot 2: Top 5 Vehicle Groups (Champion per group) ------------------
+    # ------------------ Plot 2: Top 5 Vehicle Groups (each on its own plot) ------------------
     st.subheader("Top Vehicle Groups — Champion Forecasts")
     vg_col = "Vehicle Group Rented"
     if vg_col not in df_filtered.columns:
         st.info("Column 'Vehicle Group Rented' not found.")
     else:
-        top5 = (df_filtered[vg_col].dropna().value_counts().head(5).index.tolist())
+        top5 = df_filtered[vg_col].dropna().value_counts().head(5).index.tolist()
         if not top5:
             st.info("No vehicle group data available after filters.")
         else:
-            # Combined figure: one color per group; solid = history, dashed = forecast
-            fig2 = go.Figure()
-            legends_done = set()
-
+            cols = st.columns(2)  # lay out 2 charts per row
+            i = 0
             for cat in top5:
                 df_cat = df_filtered[df_filtered[vg_col] == cat]
                 y_cat = _to_monthly_count(df_cat)
@@ -363,36 +361,22 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
 
                 exog_c = _build_exog(df_cat)
                 exog_c_future = _exog_future_repeat_last_year(exog_c, H)
-                _, (best_name, best_order, _) = _champion_summary(y_cat, H, exog_c)
+                _, (best_name_c, best_order_c, best_rmse_c) = _champion_summary(y_cat, H, exog_c)
 
-                fc_mean = _train_champion_and_forecast(
-                    y_cat, H, best_name, best_order,
-                    exog_hist=exog_c if "X" in best_name else None,
-                    exog_future=exog_c_future if "X" in best_name else None
+                fc_mean_c = _train_champion_and_forecast(
+                    y_cat, H, best_name_c, best_order_c,
+                    exog_hist=exog_c if "X" in best_name_c else None,
+                    exog_future=exog_c_future if "X" in best_name_c else None
                 )
 
-                # History
-                fig2.add_trace(go.Scatter(
-                    x=y_cat.index, y=y_cat, mode="lines",
-                    name=f"{cat} — history", legendgroup=cat,
-                    showlegend=(f"{cat} — history" not in legends_done)
-                ))
-                legends_done.add(f"{cat} — history")
-
-                # Forecast
-                fig2.add_trace(go.Scatter(
-                    x=fc_mean.index, y=fc_mean, mode="lines",
-                    name=f"{cat} — forecast", legendgroup=cat,
-                    line=dict(dash="dot"),
-                    showlegend=(f"{cat} — forecast" not in legends_done)
-                ))
-                legends_done.add(f"{cat} — forecast")
-
-            fig2.update_layout(
-                title="Historical & Forecasted Rentals — Top Vehicle Groups (Champion per group)",
-                xaxis_title="Date", yaxis_title="Number of Rentals"
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+                fig_cat = _plot_history_forecast(
+                    y_cat, fc_mean_c,
+                    f"{cat} — {best_name_c} (RMSE: {best_rmse_c:,.2f})",
+                    "Number of Rentals"
+                )
+                with cols[i % 2]:
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                i += 1
 
     st.markdown("---")
 
@@ -409,7 +393,7 @@ def render_forecasting_tab(df_filtered: pd.DataFrame):
 
     exog_rev = _build_exog(df_filtered)
     exog_rev_future = _exog_future_repeat_last_year(exog_rev, H)
-    sum_df, (best_name_r, best_order_r, best_rmse_r) = _champion_summary(y_rev, H, exog_rev)
+    _, (best_name_r, best_order_r, best_rmse_r) = _champion_summary(y_rev, H, exog_rev)
 
     fc_mean_r = _train_champion_and_forecast(
         y_rev, H, best_name_r, best_order_r,
