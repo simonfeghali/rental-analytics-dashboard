@@ -6,7 +6,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Rental Analytics Dashboard", layout="wide")
 
-DATA_PATH = "data/merged_df_further_cleaned.xlsx"
+DATA_PATH = "merged_df_further_cleaned.xlsx"
 
 # --------------------
 # Data loading & prep
