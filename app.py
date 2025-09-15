@@ -6,12 +6,7 @@ import plotly.express as px
 # ------------------------------------------------------------
 # Config
 # ------------------------------------------------------------
-st.set_page_config(
-    page_title="Rental Analytics Dashboard",
-    page_icon="🚗",
-    layout="wide",
-)
-
+st.set_page_config(page_title="Rental Analytics Dashboard", page_icon="🚗", layout="wide")
 DATA_PATH = "merged_df_further_cleaned.xlsx"
 
 # ------------------------------------------------------------
@@ -105,7 +100,6 @@ with st.container():
 
         c1, c2, c3 = st.columns([2,2,2])
         with c1:
-            # Pass list (or tuple). We'll pass list from session state.
             st.date_input(
                 "Date range",
                 value=st.session_state.flt_date,
@@ -143,7 +137,6 @@ with st.container():
     with top_right:
         st.write("")
         st.write("")
-        # Use callback so Streamlit handles the rerun cleanly
         st.button("🔄 Reset filters", use_container_width=True, on_click=_reset_filters)
 
 # ------------------------------------------------------------
@@ -162,6 +155,10 @@ if st.session_state.flt_vehicle and "Vehicle Group Rented" in df.columns:
     mask &= df["Vehicle Group Rented"].isin(st.session_state.flt_vehicle)
 
 df_filtered = df.loc[mask].copy()
+
+if df_filtered.empty:
+    st.info("No rows match the current filters.")
+    st.stop()
 
 # ------------------------------------------------------------
 # KPIs
@@ -208,24 +205,24 @@ st.plotly_chart(
     use_container_width=True
 )
 
-# Rentals per Year
+# Rentals per Year (fixed)
 yearly = (
-    df_filtered.groupby(df_filtered["__date_idx__"].dt.year)["row_id_for_counts"]
+    df_filtered.assign(year=df_filtered["__date_idx__"].dt.year)
+    .groupby("year", dropna=False)["row_id_for_counts"]
     .count()
-    .rename("rentals")
-    .reset_index(names=["year"])
+    .reset_index(name="rentals")
 )
 st.plotly_chart(
     px.bar(yearly, x="year", y="rentals", title="Rentals per Year"),
     use_container_width=True
 )
 
-# Seasonality (month of year)
+# Seasonality (month of year) (fixed)
 seasonality = (
-    df_filtered.groupby(df_filtered["__date_idx__"].dt.month)["row_id_for_counts"]
+    df_filtered.assign(month=df_filtered["__date_idx__"].dt.month)
+    .groupby("month", dropna=False)["row_id_for_counts"]
     .count()
-    .rename("rentals")
-    .reset_index(names=["month"])
+    .reset_index(name="rentals")
 )
 st.plotly_chart(
     px.bar(seasonality, x="month", y="rentals", title="Seasonality by Month"),
