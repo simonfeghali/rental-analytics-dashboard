@@ -9,7 +9,7 @@ st.set_page_config(page_title="Rental Analytics Dashboard", layout="wide")
 # --- Load pre-cleaned dataset directly from repo ---
 @st.cache_data
 def load_data():
-    df = pd.read_excel("data/merged_df_further_cleaned.xlsx")  # <-- keep file in repo under /data
+    df = pd.read_excel("merged_df_further_cleaned.xlsx")  # <-- keep file in repo under /data
     # Ensure datetime columns
     if "Checkout Date" in df.columns:
         df["Checkout Date"] = pd.to_datetime(df["Checkout Date"], errors="coerce")
