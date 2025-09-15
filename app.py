@@ -6,61 +6,58 @@ import plotly.express as px
 
 st.set_page_config(page_title="Rental Analytics Dashboard", layout="wide")
 
-# --- File Upload ---
-st.sidebar.header("Upload Excel Files")
-file1 = st.sidebar.file_uploader("Upload 19 20.xlsx", type=["xlsx"])
-file2 = st.sidebar.file_uploader("Upload 22 23 24.xlsx", type=["xlsx"])
-
-if file1 and file2:
-    # Read all sheets from both files
-    df_19_20 = pd.concat([pd.read_excel(file1, sheet_name=s) for s in pd.ExcelFile(file1).sheet_names], ignore_index=True)
-    df_22_23_24 = pd.concat([pd.read_excel(file2, sheet_name=s) for s in pd.ExcelFile(file2).sheet_names], ignore_index=True)
-
-    # Merge
-    merged_df = pd.concat([df_19_20, df_22_23_24], ignore_index=True)
-
-    st.success(f"Data loaded! Shape: {merged_df.shape}")
-
-    # --- Cleaning (shortened from your notebook) ---
-    for col in merged_df.select_dtypes(include='object').columns:
-        merged_df[col] = merged_df[col].replace(r'^\s*$', np.nan, regex=True)
-
-    # Drop columns with >20% NaN
-    missing_perc = merged_df.isnull().mean() * 100
-    merged_df = merged_df.drop(columns=missing_perc[missing_perc > 20].index)
-
-    # Example: parse dates
-    if "Checkout Date" in merged_df.columns:
-        merged_df["Checkout Date"] = pd.to_datetime(merged_df["Checkout Date"], errors="coerce")
-        merged_df["checkout_month"] = merged_df["Checkout Date"].dt.to_period("M")
-
-    df = merged_df.copy()
+# --- Load pre-cleaned dataset directly from repo ---
+@st.cache_data
+def load_data():
+    df = pd.read_excel("data/merged_df_further_cleaned.xlsx")  # <-- keep file in repo under /data
+    # Ensure datetime columns
+    if "Checkout Date" in df.columns:
+        df["Checkout Date"] = pd.to_datetime(df["Checkout Date"], errors="coerce")
+        df["checkout_month"] = df["Checkout Date"].dt.to_period("M")
     df["row_id_for_counts"] = range(1, len(df)+1)
     df["__date_idx__"] = df["Checkout Date"]
+    return df
 
-    # --- EDA Visuals ---
-    st.header("📊 Exploratory Data Analysis")
+df = load_data()
 
-    # Rentals per Month
-    rentals_per_month = df.dropna(subset=["__date_idx__"]).set_index("__date_idx__").resample("M")["row_id_for_counts"].count()
-    fig1 = px.line(rentals_per_month, y="row_id_for_counts", title="Rentals per Month")
-    st.plotly_chart(fig1, use_container_width=True)
+# --- KPIs ---
+st.title("📊 Rental Analytics Dashboard")
 
-    # Rentals by Year
-    rentals_per_year = df.groupby(df["Checkout Date"].dt.year)["row_id_for_counts"].count()
-    fig2 = px.bar(rentals_per_year, y="row_id_for_counts", title="Rentals per Year")
-    st.plotly_chart(fig2, use_container_width=True)
+total_rentals = len(df)
+unique_vehicles = df["Vehicle Group Rented"].nunique() if "Vehicle Group Rented" in df else 0
+date_range = f"{df['Checkout Date'].min().date()} → {df['Checkout Date'].max().date()}"
 
-    # Seasonality
-    seasonality = df.groupby(df["Checkout Date"].dt.month)["row_id_for_counts"].count()
-    fig3 = px.bar(seasonality, y="row_id_for_counts", title="Seasonality by Month")
-    st.plotly_chart(fig3, use_container_width=True)
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Rentals", f"{total_rentals:,}")
+col2.metric("Unique Vehicle Groups", unique_vehicles)
+col3.metric("Date Range", date_range)
 
-    # Vehicle Categories
-    if "Vehicle Group Rented" in df.columns:
-        vehicle_counts = df["Vehicle Group Rented"].value_counts().head(10)
-        fig4 = px.bar(vehicle_counts, y=vehicle_counts.values, x=vehicle_counts.index, title="Top Vehicle Groups")
-        st.plotly_chart(fig4, use_container_width=True)
+# --- EDA Charts ---
+st.header("Exploratory Data Analysis")
 
-else:
-    st.info("⬅️ Please upload both Excel files to begin.")
+# Rentals per Month
+rentals_per_month = (
+    df.dropna(subset=["__date_idx__"])
+      .set_index("__date_idx__")
+      .resample("M")["row_id_for_counts"].count()
+)
+fig1 = px.line(rentals_per_month, y="row_id_for_counts", title="Rentals per Month")
+st.plotly_chart(fig1, use_container_width=True)
+
+# Rentals per Year
+rentals_per_year = df.groupby(df["Checkout Date"].dt.year)["row_id_for_counts"].count()
+fig2 = px.bar(rentals_per_year, y="row_id_for_counts", title="Rentals per Year")
+st.plotly_chart(fig2, use_container_width=True)
+
+# Seasonality
+seasonality = df.groupby(df["Checkout Date"].dt.month)["row_id_for_counts"].count()
+fig3 = px.bar(seasonality, y="row_id_for_counts", title="Seasonality by Month")
+st.plotly_chart(fig3, use_container_width=True)
+
+# Vehicle Groups
+if "Vehicle Group Rented" in df.columns:
+    vehicle_counts = df["Vehicle Group Rented"].value_counts().head(10)
+    fig4 = px.bar(vehicle_counts, y=vehicle_counts.values, x=vehicle_counts.index,
+                  title="Top Vehicle Groups")
+    st.plotly_chart(fig4, use_container_width=True)
+
