@@ -43,7 +43,8 @@ def maybe_kpi_or_bar(series: pd.Series, title: str, label_name: str):
             st.metric(label=f"{label_name} — {label}", value=fmt_int(value))
         return
     df_counts = s.rename_axis(label_name).reset_index(name="count")
-    fig = px.bar(df_counts, x=label_name, y="count", title=title)
+    fig = px.bar(df_counts, x="count", y=label_name, orientation="h", title=title)
+    fig.update_layout(yaxis={'categoryorder':'total ascending'})
     st.plotly_chart(fig, use_container_width=True)
 
 def compute_time_bins(df: pd.DataFrame):
@@ -261,14 +262,14 @@ k1, k2, k3 = st.columns(3)
 k1.metric("Total Rentals", fmt_int(len(df_filtered)))
 
 total_rev = pd.to_numeric(df_filtered.get("Net Time&Dist Amount", pd.Series(dtype=float)), errors="coerce").sum() / 100
-k2.metric("Total Revenue", f"{total_rev:,.0f}")
+k2.metric("Total Revenue", f"${total_rev:,.0f}")
 
 if {"Days Charged Count", "Net Time&Dist Amount"}.issubset(df_filtered.columns):
     adr = (
         pd.to_numeric(df_filtered["Net Time&Dist Amount"], errors="coerce") /
         pd.to_numeric(df_filtered["Days Charged Count"], errors="coerce").replace(0, np.nan)
     ).mean() / 100
-    k3.metric("Avg Daily Rate", f"{adr:,.0f}")
+    k3.metric("Avg Daily Rate", f"${adr:,.0f}")
 else:
     k3.metric("Avg Daily Rate", "—")
 
