@@ -27,7 +27,16 @@ def fmt_int(x):
         return f"{int(x):,}"
     except Exception:
         return "—"
-
+        
+def clean_fig(fig):
+    fig.update_layout(
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=False),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)"
+    )
+    return fig
+    
 def maybe_kpi_or_bar(series: pd.Series, title: str, label_name: str):
     """
     If a category count series contains one category -> show KPI
@@ -333,9 +342,8 @@ with tab_dem:
             share(df_filtered["is_summer"]),
         ]
     })
-    fig = px.bar(holiday_summary, x="Period", y="share",
-                 title="Share of Rentals During Holiday/Seasonal Periods")
-    fig.update_layout(xaxis_title="Period", yaxis_title="Share of Rentals")
+    fig = px.bar(holiday_summary,x="share",y="Period",orientation="h",title="Share of Rentals During Holiday/Seasonal Periods")
+    fig.update_layout(xaxis_title="Share of Rentals",yaxis_title="Period")
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------- Customer Mix ----------------------
