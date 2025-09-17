@@ -315,7 +315,6 @@ tab_dem, tab_cust, tab_fleet, tab_time, tab_price, tab_ops, tab_fc = st.tabs(
 
 # ---------------------- Demand & Seasonality ----------------------
 with tab_dem:
-    st.subheader("Monthly Rentals")
     monthly = (
         df_filtered.dropna(subset=["__date_idx__"])
         .set_index("__date_idx__")
@@ -363,18 +362,14 @@ with tab_dem:
 
 # ---------------------- Customer Mix ----------------------
 with tab_cust:
-    st.subheader("Channel Breakdown")
     maybe_kpi_or_bar(df_filtered["cust_channel"].value_counts(), "Channel Breakdown", "channel")
 
-    st.subheader("Region Breakdown")
     maybe_kpi_or_bar(df_filtered["cust_region"].value_counts(), "Region Breakdown", "region")
 
-    st.subheader("Top Locations")
     maybe_kpi_or_bar(df_filtered["__location__"].value_counts().head(10), "Top Locations", "location")
 
 # ---------------------- Fleet Mix ----------------------
 with tab_fleet:
-    st.subheader("Vehicle Groups")
     if "Vehicle Group Rented" in df_filtered.columns:
         maybe_kpi_or_bar(
             df_filtered["Vehicle Group Rented"].value_counts().head(10),
@@ -386,7 +381,6 @@ with tab_fleet:
 
 # ---------------------- Time Patterns ----------------------
 with tab_time:
-    st.subheader("Rentals by Weekday")
     wd = (
         df_filtered["Checkout Date"].dt.day_name().value_counts()
         .rename_axis("weekday").reset_index(name="count")
@@ -396,11 +390,9 @@ with tab_time:
     wd = wd.sort_values("weekday")
     maybe_kpi_or_bar(wd.set_index("weekday")["count"], "Rentals by Weekday", "weekday")
 
-    st.subheader("Weekend vs Weekday")
     wk = df_filtered["checkout_is_weekend"].map({True:"Weekend", False:"Weekday"}).value_counts()
     maybe_kpi_or_bar(wk, "Rental Frequency: Weekend vs Weekday", "Is Weekend")
 
-    st.subheader("Rental Frequency by Checkout Time (3-hour Bins)")
     tb = compute_time_bins(df_filtered)
     if tb is not None:
         fig = px.bar(tb, x="Time Bin", y="Count", title="Rental Frequency by Checkout Time (3-hour Bins)")
@@ -441,7 +433,6 @@ with tab_price:
         fig.update_layout(xaxis_title="Date", yaxis_title="avg_discount_rate")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Distributions")
     c4, c5 = st.columns(2)
     with c4:
         if df_filtered["base_price_per_day"].notna().any():
@@ -466,19 +457,16 @@ with tab_ops:
     c1, c2, c3 = st.columns(3)
     if "Rental Length Days" in df_filtered.columns:
         with c1:
-            st.subheader("Rental Length (Days)")
             fig = px.histogram(df_filtered, x="Rental Length Days", title="Distribution of Rental Length (Days)")
             fig.update_layout(xaxis_title="Rental Length (Days)", yaxis_title="Frequency")
             st.plotly_chart(fig, use_container_width=True)
     if "Rental Length Hours" in df_filtered.columns:
         with c2:
-            st.subheader("Rental Length (Hours)")
             fig = px.histogram(df_filtered, x="Rental Length Hours", title="Distribution of Rental Length (Hours)")
             fig.update_layout(xaxis_title="Rental Length (Hours)", yaxis_title="Frequency")
             st.plotly_chart(fig, use_container_width=True)
     if "Days Charged Count" in df_filtered.columns:
         with c3:
-            st.subheader("Days Charged")
             fig = px.histogram(df_filtered, x="Days Charged Count", title="Distribution of Days Charged")
             fig.update_layout(xaxis_title="Days Charged", yaxis_title="Frequency")
             st.plotly_chart(fig, use_container_width=True)
