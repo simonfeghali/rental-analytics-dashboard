@@ -29,13 +29,15 @@ def fmt_int(x):
         return "—"
         
 def clean_fig(fig):
+    """Remove gridlines and keep transparent background for any px figure."""
     fig.update_layout(
         xaxis=dict(showgrid=False),
         yaxis=dict(showgrid=False),
         plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)"
+        paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig
+
     
 def maybe_kpi_or_bar(series: pd.Series, title: str, label_name: str):
     """
