@@ -28,15 +28,28 @@ def fmt_int(x):
     except Exception:
         return "—"
         
-def clean_fig(fig):
-    """Remove gridlines and keep transparent background for any px figure."""
-    fig.update_layout(
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=False),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
-    return fig
+import functools
+
+def _no_grid(px_func):
+    """Wrapper that removes gridlines from all px figures."""
+    @functools.wraps(px_func)
+    def wrapper(*args, **kwargs):
+        fig = px_func(*args, **kwargs)
+        fig.update_layout(
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+        )
+        return fig
+    return wrapper
+
+# patch the functions you use
+px.line = _no_grid(px.line)
+px.bar = _no_grid(px.bar)
+px.histogram = _no_grid(px.histogram)
+px.scatter = _no_grid(px.scatter)
+
 
     
 def maybe_kpi_or_bar(series: pd.Series, title: str, label_name: str):
